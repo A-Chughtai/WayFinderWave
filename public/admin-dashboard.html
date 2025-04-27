@@ -82,6 +82,56 @@
             border-radius: 5px;
             cursor: pointer;
         }
+        .bookings-table {
+            width: 100%;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        .bookings-table table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        .bookings-table th, .bookings-table td {
+            padding: 15px;
+            text-align: left;
+            border-bottom: 1px solid #eee;
+        }
+        .bookings-table th {
+            background: #f8f9fa;
+            font-weight: 600;
+        }
+        .logs-table {
+            width: 100%;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            overflow: hidden;
+            margin-top: 30px;
+        }
+        .logs-filters {
+            padding: 15px;
+            background: #f8f9fa;
+            border-bottom: 1px solid #eee;
+        }
+        .logs-filters select {
+            padding: 8px;
+            margin-right: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        .logs-filters button {
+            padding: 8px 15px;
+            background: #764ba2;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        .logs-filters button:hover {
+            background: #667eea;
+        }
     </style>
 </head>
 <body>
@@ -139,6 +189,51 @@
                 </thead>
                 <tbody id="pendingToursList">
                     <!-- Pending tours will be populated here -->
+                </tbody>
+            </table>
+        </div>
+
+        <div class="bookings-table">
+            <h2>Tour Bookings</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Tour Name</th>
+                        <th>Client Name</th>
+                        <th>Booking Date</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody id="bookingsList">
+                    <!-- Bookings will be populated here -->
+                </tbody>
+            </table>
+        </div>
+
+        <div class="logs-table">
+            <h2>System Logs</h2>
+            <div class="logs-filters">
+                <select id="logFilter">
+                    <option value="all">All Actions</option>
+                    <option value="CREATE_TOUR">Tour Creation</option>
+                    <option value="DELETE_TOUR">Tour Deletion</option>
+                    <option value="BOOK_TOUR">Tour Booking</option>
+                    <option value="CANCEL_BOOKING">Booking Cancellation</option>
+                </select>
+                <button onclick="fetchLogs()">Apply Filter</button>
+            </div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Timestamp</th>
+                        <th>User</th>
+                        <th>User Type</th>
+                        <th>Action</th>
+                        <th>Details</th>
+                    </tr>
+                </thead>
+                <tbody id="logsList">
+                    <!-- Logs will be populated here -->
                 </tbody>
             </table>
         </div>
@@ -284,9 +379,45 @@
             }
         }
 
+        // Fetch system logs
+        async function fetchLogs() {
+            try {
+                const filter = document.getElementById('logFilter').value;
+                const response = await fetch(`/api/admin/logs${filter !== 'all' ? `?action=${filter}` : ''}`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+                
+                if (!response.ok) {
+                    throw new Error('Failed to fetch logs');
+                }
+
+                const logs = await response.json();
+                displayLogs(logs);
+            } catch (error) {
+                console.error('Error:', error);
+                alert('Failed to fetch logs');
+            }
+        }
+
+        function displayLogs(logs) {
+            const logsList = document.getElementById('logsList');
+            logsList.innerHTML = logs.map(log => `
+                <tr>
+                    <td>${new Date(log.created_at).toLocaleString()}</td>
+                    <td>${log.user_name || 'System'}</td>
+                    <td>${log.user_type || 'System'}</td>
+                    <td>${log.action}</td>
+                    <td>${log.details}</td>
+                </tr>
+            `).join('');
+        }
+
         // Fetch data when page loads
         fetchUsers();
         fetchPendingTours();
+        fetchLogs();
     </script>
 </body>
 </html> 

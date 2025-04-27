@@ -156,6 +156,7 @@
                         <th>Description</th>
                         <th>Price</th>
                         <th>Duration</th>
+                        <th>Capacity</th>
                         <th>Status</th>
                         <th>Actions</th>
                     </tr>
@@ -250,14 +251,15 @@
                     <td>${tour.description}</td>
                     <td>$${tour.price}</td>
                     <td>${tour.duration} days</td>
+                    <td>${tour.capacity} participants</td>
                     <td>
                         <span class="status-badge ${tour.status}">${tour.status}</span>
                     </td>
                     <td>
                         ${tour.status === 'pending' ? `
                             <button class="action-btn edit-btn" onclick="editTour(${tour.id})">Edit</button>
-                            <button class="action-btn delete-btn" onclick="deleteTour(${tour.id})">Delete</button>
                         ` : ''}
+                        <button class="action-btn delete-btn" onclick="deleteTour(${tour.id})">Delete</button>
                     </td>
                 </tr>
             `).join('');
@@ -290,17 +292,31 @@
             const description = prompt('Enter tour description:');
             if (!description) return;
 
-            const price = prompt('Enter tour price:');
-            if (!price) return;
+            const price = parseFloat(prompt('Enter tour price:'));
+            if (isNaN(price) || price <= 0) {
+                alert('Please enter a valid positive number for price');
+                return;
+            }
 
-            const duration = prompt('Enter tour duration (in days):');
-            if (!duration) return;
+            const duration = parseInt(prompt('Enter tour duration (in days):'));
+            if (isNaN(duration) || duration <= 0) {
+                alert('Please enter a valid positive number for duration');
+                return;
+            }
 
-            createTour({ name, description, price, duration });
+            const capacity = parseInt(prompt('Enter maximum number of participants:'));
+            if (isNaN(capacity) || capacity <= 0) {
+                alert('Please enter a valid positive number for capacity');
+                return;
+            }
+
+            createTour({ name, description, price, duration, capacity });
         }
 
         async function createTour(tourData) {
             try {
+                console.log('Sending tour creation request:', tourData);
+                
                 const response = await fetch('/api/tours', {
                     method: 'POST',
                     headers: {
@@ -310,15 +326,58 @@
                     body: JSON.stringify(tourData)
                 });
 
+                const responseData = await response.json();
+                console.log('Server response:', responseData);
+
                 if (!response.ok) {
-                    throw new Error('Failed to create tour');
+                    if (responseData.missing) {
+                        const missingFields = Object.entries(responseData.missing)
+                            .filter(([_, isMissing]) => isMissing)
+                            .map(([field]) => field)
+                            .join(', ');
+                        throw new Error(`Missing required fields: ${missingFields}`);
+                    } else if (responseData.invalid) {
+                        const invalidFields = Object.entries(responseData.invalid)
+                            .filter(([_, isInvalid]) => isInvalid)
+                            .map(([field]) => field)
+                            .join(', ');
+                        throw new Error(`Invalid values for: ${invalidFields}`);
+                    } else {
+                        throw new Error(responseData.message || responseData.error || 'Failed to create tour');
+                    }
                 }
 
                 alert('Tour created successfully!');
                 fetchTours();
             } catch (error) {
+                console.error('Error creating tour:', error);
+                alert(error.message || 'Failed to create tour');
+            }
+        }
+
+        async function deleteTour(tourId) {
+            if (!confirm('Are you sure you want to delete this tour? This action cannot be undone.')) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/provider/tours/${tourId}`, {
+                    method: 'DELETE',
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.message || 'Failed to delete tour');
+                }
+
+                alert('Tour deleted successfully!');
+                fetchTours(); // Refresh tours list
+            } catch (error) {
                 console.error('Error:', error);
-                alert('Failed to create tour');
+                alert(error.message || 'Failed to delete tour');
             }
         }
 

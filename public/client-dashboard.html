@@ -136,8 +136,10 @@
                 <thead>
                     <tr>
                         <th>Tour Name</th>
+                        <th>Price</th>
                         <th>Date</th>
                         <th>Status</th>
+                        <th>Payment Method</th>
                         <th>Actions</th>
                     </tr>
                 </thead>
@@ -207,8 +209,12 @@
                         <p>${tour.description}</p>
                         <p>Provider: ${tour.provider_name}</p>
                         <p>Duration: ${tour.duration} days</p>
+                        <p>Available spots: ${tour.capacity - (tour.current_bookings || 0)}/${tour.capacity}</p>
                         <p class="tour-price">$${tour.price}</p>
-                        <button class="book-btn" onclick="bookTour(${tour.id})">Book Now</button>
+                        <button class="book-btn" onclick="bookTour(${tour.id})" 
+                            ${(tour.current_bookings || 0) >= tour.capacity ? 'disabled' : ''}>
+                            ${(tour.current_bookings || 0) >= tour.capacity ? 'Fully Booked' : 'Book Now'}
+                        </button>
                     </div>
                 </div>
             `).join('');
@@ -219,13 +225,14 @@
             bookingsList.innerHTML = bookings.map(booking => `
                 <tr>
                     <td>${booking.tour_name}</td>
+                    <td>$${booking.price}</td>
                     <td>${new Date(booking.date).toLocaleDateString()}</td>
+                    <td>${booking.status}</td>
+                    <td>${booking.payment_method}</td>
                     <td>
-                        <span class="status-badge ${booking.status}">${booking.status}</span>
-                    </td>
-                    <td>
-                        ${booking.status === 'pending' || booking.status === 'active' ? `
-                            <button class="action-btn delete-btn" onclick="cancelBooking(${booking.id})">Cancel</button>
+                        <button class="action-btn" onclick="viewReceipt(${booking.id})">View Receipt</button>
+                        ${booking.status === 'completed' ? `
+                            <button class="action-btn" onclick="showFeedbackForm(${booking.id})">Give Feedback</button>
                         ` : ''}
                     </td>
                 </tr>
@@ -233,51 +240,162 @@
         }
 
         async function bookTour(tourId) {
+            // Create payment method selection dialog
+            const paymentDialog = document.createElement('div');
+            paymentDialog.style.cssText = `
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background: rgba(0,0,0,0.5);
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                z-index: 1000;
+            `;
+
+            const dialogContent = document.createElement('div');
+            dialogContent.style.cssText = `
+                background: white;
+                padding: 20px;
+                border-radius: 10px;
+                width: 300px;
+                text-align: center;
+            `;
+
+            dialogContent.innerHTML = `
+                <h3 style="margin-top: 0;">Select Payment Method</h3>
+                <div style="display: flex; gap: 10px; justify-content: center; margin: 20px 0;">
+                    <button onclick="selectPaymentMethod('cash')" style="padding: 10px 20px; background: #764ba2; color: white; border: none; border-radius: 5px; cursor: pointer;">Cash</button>
+                    <button onclick="selectPaymentMethod('credit')" style="padding: 10px 20px; background: #764ba2; color: white; border: none; border-radius: 5px; cursor: pointer;">Credit Card</button>
+                </div>
+                <button onclick="closePaymentDialog()" style="padding: 10px 20px; background: #f44336; color: white; border: none; border-radius: 5px; cursor: pointer;">Cancel</button>
+            `;
+
+            paymentDialog.appendChild(dialogContent);
+            document.body.appendChild(paymentDialog);
+
+            // Function to handle payment method selection
+            window.selectPaymentMethod = async function(method) {
+                try {
+                    const response = await fetch('/api/bookings', {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': `Bearer ${token}`,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ 
+                            tour_id: tourId,
+                            payment_method: method
+                        })
+                    });
+
+                    if (!response.ok) {
+                        const errorData = await response.json();
+                        throw new Error(errorData.message || 'Failed to book tour');
+                    }
+
+                    alert('Tour booked successfully!');
+                    fetchBookings(); // Refresh bookings list
+                } catch (error) {
+                    console.error('Error:', error);
+                    alert(error.message || 'Failed to book tour');
+                } finally {
+                    closePaymentDialog();
+                }
+            };
+
+            // Function to close the dialog
+            window.closePaymentDialog = function() {
+                document.body.removeChild(paymentDialog);
+                delete window.selectPaymentMethod;
+                delete window.closePaymentDialog;
+            };
+        }
+
+        async function viewReceipt(bookingId) {
             try {
-                const response = await fetch('/api/bookings', {
+                const response = await fetch(`/api/bookings/${bookingId}/receipt`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+                
+                if (!response.ok) {
+                    throw new Error('Failed to fetch receipt');
+                }
+
+                const receipt = await response.json();
+                
+                // Create a new window to display the receipt
+                const receiptWindow = window.open('', '_blank');
+                receiptWindow.document.write(`
+                    <html>
+                    <head>
+                        <title>Receipt</title>
+                        <style>
+                            body { font-family: Arial, sans-serif; padding: 20px; }
+                            .receipt { max-width: 500px; margin: 0 auto; }
+                            .header { text-align: center; margin-bottom: 20px; }
+                            .details { margin-bottom: 20px; }
+                            .footer { text-align: center; margin-top: 20px; }
+                        </style>
+                    </head>
+                    <body>
+                        <div class="receipt">
+                            <div class="header">
+                                <h1>Tour Booking Receipt</h1>
+                            </div>
+                            <div class="details">
+                                <p><strong>Tour Name:</strong> ${receipt.tour_name}</p>
+                                <p><strong>Client Name:</strong> ${receipt.client_name}</p>
+                                <p><strong>Booking Date:</strong> ${new Date(receipt.date).toLocaleDateString()}</p>
+                                <p><strong>Price:</strong> $${receipt.price}</p>
+                                <p><strong>Payment Method:</strong> ${receipt.payment_method}</p>
+                                <p><strong>Status:</strong> ${receipt.status}</p>
+                            </div>
+                            <div class="footer">
+                                <p>Thank you for booking with us!</p>
+                            </div>
+                        </div>
+                    </body>
+                    </html>
+                `);
+            } catch (error) {
+                console.error('Error:', error);
+                alert('Failed to view receipt');
+            }
+        }
+
+        async function showFeedbackForm(bookingId) {
+            const rating = parseInt(prompt('Please rate your experience (1-5):'));
+            if (isNaN(rating) || rating < 1 || rating > 5) {
+                alert('Please enter a valid rating between 1 and 5');
+                return;
+            }
+
+            const comment = prompt('Please provide your feedback (optional):');
+
+            try {
+                const response = await fetch(`/api/bookings/${bookingId}/feedback`, {
                     method: 'POST',
                     headers: {
                         'Authorization': `Bearer ${token}`,
                         'Content-Type': 'application/json'
                     },
-                    body: JSON.stringify({ tour_id: tourId })
+                    body: JSON.stringify({ rating, comment })
                 });
 
                 if (!response.ok) {
-                    throw new Error('Failed to book tour');
+                    const errorData = await response.json();
+                    throw new Error(errorData.message || 'Failed to submit feedback');
                 }
 
-                alert('Tour booked successfully!');
-                fetchBookings(); // Refresh bookings list
+                alert('Thank you for your feedback!');
             } catch (error) {
                 console.error('Error:', error);
-                alert('Failed to book tour');
-            }
-        }
-
-        async function cancelBooking(bookingId) {
-            if (!confirm('Are you sure you want to cancel this booking?')) {
-                return;
-            }
-
-            try {
-                const response = await fetch(`/api/bookings/${bookingId}/cancel`, {
-                    method: 'PUT',
-                    headers: {
-                        'Authorization': `Bearer ${token}`,
-                        'Content-Type': 'application/json'
-                    }
-                });
-
-                if (!response.ok) {
-                    throw new Error('Failed to cancel booking');
-                }
-
-                alert('Booking cancelled successfully!');
-                fetchBookings(); // Refresh bookings list
-            } catch (error) {
-                console.error('Error:', error);
-                alert('Failed to cancel booking');
+                alert(error.message || 'Failed to submit feedback');
             }
         }
 
